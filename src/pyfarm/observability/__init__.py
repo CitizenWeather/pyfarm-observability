@@ -1,6 +1,6 @@
 """pyfarm-observability: Structured logging, metrics, and health checks."""
 
-from pyfarm.observability.event_bus import EventBus
+from pyfarm.observability.event_bus import EventBus, EventSink, EventSubscriber
 from pyfarm.observability.health import HealthMonitor
 from pyfarm.observability.impl import ObservabilityImpl
 from pyfarm.observability.log_store import LogStore
@@ -17,6 +17,8 @@ __all__ = [
     "LogEntry",
     "Metric",
     "EventBus",
+    "EventSink",
+    "EventSubscriber",
     "LogStore",
     "HealthMonitor",
 ]
