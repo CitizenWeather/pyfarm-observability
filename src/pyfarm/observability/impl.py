@@ -71,12 +71,12 @@ class ObservabilityImpl(Observability):
         return sorted(metrics, key=lambda m: m.timestamp, reverse=True)[:limit]
 
     async def subscribe_to_events(self, handler) -> None:
-        """Subscribe handler to all control events."""
-        await self._event_bus.subscribe("*", handler)
+        """Subscribe handler (an EventSink with async handle) to all events."""
+        self._event_bus.subscribe(handler)
 
     async def publish_event(self, event: ControlEvent) -> None:
         """Publish a control event."""
-        await self._event_bus.publish_all(event)
+        await self._event_bus.publish(event)
         # Also log the event
         entry = LogEntry(
             grow_id=event.grow_id,

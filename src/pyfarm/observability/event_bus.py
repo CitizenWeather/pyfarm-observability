@@ -1,4 +1,11 @@
-"""Event bus and subscription mechanism for pyfarm."""
+"""Event bus and subscription mechanism for pyfarm.
+
+The bus is a *buffered event spine*: producers call :meth:`emit` synchronously
+(cheap, non-blocking) during a control tick, and the consumer drains buffered
+events to all registered sinks at a well-defined point via :meth:`drain`. This
+keeps event production off the async path inside tight control loops while
+still giving sinks an ``await``-friendly delivery point.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +15,9 @@ from pyfarm.core.models import ControlEvent
 
 
 class EventSubscriber(Protocol):
-    """Protocol for event subscribers."""
+    """Protocol for event subscribers (legacy alias of :class:`EventSink`)."""
 
-    async def handle_event(self, event: ControlEvent) -> None:
+    async def handle(self, event: ControlEvent) -> None:
         """Handle an event."""
         ...
 
@@ -24,36 +31,37 @@ class EventSink(Protocol):
 
 
 class EventBus:
-    """In-memory event bus for publishing and subscribing."""
+    """In-memory, buffered event bus.
 
-    def __init__(self):
-        """Initialize event bus."""
-        self._subscribers: dict[str, list[EventSubscriber]] = {}
-        self._all_subscribers: list[EventSubscriber] = []
+    Usage::
 
-    async def subscribe(self, event_type: str, handler: EventSubscriber) -> None:
-        """Subscribe to events of a given type."""
-        if event_type not in self._subscribers:
-            self._subscribers[event_type] = []
-        self._subscribers[event_type].append(handler)
+        bus = EventBus()
+        bus.subscribe(my_sink)      # sink implements async handle(event)
+        bus.emit(event)             # synchronous, buffered
+        await bus.drain()           # deliver buffered events to all sinks
+    """
 
-    async def subscribe_all(self, handler: EventSubscriber) -> None:
-        """Subscribe to all events."""
-        self._all_subscribers.append(handler)
+    def __init__(self) -> None:
+        self._sinks: list[EventSink] = []
+        self._buffer: list[ControlEvent] = []
 
-    async def publish(self, event: ControlEvent) -> None:
-        """Publish an event to all subscribers."""
-        event_type = event.kind.value
-        if event_type in self._subscribers:
-            for handler in self._subscribers[event_type]:
-                await handler.handle_event(event)
-        for handler in self._all_subscribers:
-            await handler.handle_event(event)
+    def subscribe(self, sink: EventSink) -> None:
+        """Register a sink to receive events on :meth:`drain`."""
+        self._sinks.append(sink)
 
-    async def emit(self, event: ControlEvent) -> None:
-        """Emit an event (alias for publish for compatibility)."""
-        await self.publish(event)
+    def emit(self, event: ControlEvent) -> None:
+        """Buffer an event for later delivery. Synchronous and non-blocking."""
+        self._buffer.append(event)
 
     async def drain(self) -> None:
-        """Drain/flush all pending events (no-op for in-memory bus)."""
-        pass
+        """Deliver all buffered events to every sink, then clear the buffer."""
+        events = self._buffer
+        self._buffer = []
+        for event in events:
+            for sink in self._sinks:
+                await sink.handle(event)
+
+    async def publish(self, event: ControlEvent) -> None:
+        """Convenience: emit a single event and drain immediately."""
+        self.emit(event)
+        await self.drain()
